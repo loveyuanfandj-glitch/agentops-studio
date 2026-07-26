@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from agentops.database import Base
 from agentops.models import Tenant
+from agentops.seed import seed_operational_data
 
 
 @pytest_asyncio.fixture
@@ -26,6 +27,8 @@ async def session_factory(
                 slug="northstar-retail",
             )
         )
+        await session.commit()
+        await seed_operational_data(session)
         await session.commit()
     yield factory
     await engine.dispose()

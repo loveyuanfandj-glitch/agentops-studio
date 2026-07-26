@@ -3,10 +3,21 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from datetime import date
 from time import perf_counter
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from sqlalchemy import or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from agentops.models import (
+    CommerceOrder,
+    CustomerHealthRecord,
+    InventoryRecord,
+    KnowledgeRecord,
+    RevenueSummaryRecord,
+)
 
 
 class StrictToolInput(BaseModel):
@@ -14,8 +25,8 @@ class StrictToolInput(BaseModel):
 
 
 class RevenueSummaryInput(StrictToolInput):
-    start_date: str
-    end_date: str
+    start_date: date
+    end_date: date
     channel: Literal["all", "web", "marketplace", "retail"]
 
 
@@ -39,7 +50,9 @@ class InventoryAlertsInput(StrictToolInput):
     days_of_cover_below: int = Field(ge=1, le=30)
 
 
-ToolHandler = Callable[[str, StrictToolInput], Awaitable[dict[str, Any]]]
+ToolHandler = Callable[
+    [AsyncSession, str, StrictToolInput], Awaitable[dict[str, Any]]
+]
 
 
 @dataclass(frozen=True)
@@ -67,141 +80,185 @@ class ToolExecution:
 
 
 class ToolError(Exception):
-    def __init__(self, code: str, message: str, *, retryable: bool = False) -> None:
+    def __init__(
+        self, code: str, message: str, *, retryable: bool = False
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.retryable = retryable
 
 
 async def get_revenue_summary(
-    tenant_id: str, payload: StrictToolInput
+    session: AsyncSession, tenant_id: str, payload: StrictToolInput
 ) -> dict[str, Any]:
     request = RevenueSummaryInput.model_validate(payload)
-    tenant_multiplier = 1.0 if tenant_id == "tenant_northstar" else 0.72
-    gross = round(184_620.42 * tenant_multiplier, 2)
+    record = await session.scalar(
+        select(RevenueSummaryRecord).where(
+            RevenueSummaryRecord.tenant_id == tenant_id,
+            RevenueSummaryRecord.start_date == request.start_date,
+            RevenueSummaryRecord.end_date == request.end_date,
+            RevenueSummaryRecord.channel == request.channel,
+        )
+    )
+    if record is None:
+        raise ToolError(
+            "data_not_found",
+            "No revenue summary matched the requested tenant, period, and channel.",
+        )
     return {
-        "period": {"start": request.start_date, "end": request.end_date},
-        "channel": request.channel,
-        "currency": "USD",
-        "gross_revenue": gross,
-        "net_revenue": round(gross * 0.921, 2),
-        "orders": round(1_428 * tenant_multiplier),
-        "refund_rate": 0.028,
-        "change_vs_previous_period_pct": 12.4,
-    }
-
-
-async def search_orders(tenant_id: str, payload: StrictToolInput) -> dict[str, Any]:
-    request = SearchOrdersInput.model_validate(payload)
-    orders = [
-        {
-            "order_id": "ORD-10482",
-            "customer_id": "CUS-2041",
-            "customer": "Avery Stone",
-            "status": "at_risk",
-            "value_usd": 4_820.0,
-            "risk": "Payment retry failed twice",
+        "source": "postgresql.revenue_summaries",
+        "period": {
+            "start": record.start_date.isoformat(),
+            "end": record.end_date.isoformat(),
         },
-        {
-            "order_id": "ORD-10471",
-            "customer_id": "CUS-1188",
-            "customer": "Morgan Labs",
-            "status": "at_risk",
-            "value_usd": 3_680.0,
-            "risk": "Fulfilment SLA exceeded",
-        },
-        {
-            "order_id": "ORD-10466",
-            "customer_id": "CUS-1410",
-            "customer": "Northwind Goods",
-            "status": "paid",
-            "value_usd": 2_940.0,
-            "risk": None,
-        },
-    ]
-    filtered = [
-        order
-        for order in orders
-        if (request.status == "all" or order["status"] == request.status)
-        and order["value_usd"] >= request.minimum_value_usd
-    ][: request.limit]
-    return {
-        "tenant_id": tenant_id,
-        "count": len(filtered),
-        "orders": filtered,
-        "filters": request.model_dump(),
-    }
-
-
-async def get_customer_health(
-    tenant_id: str, payload: StrictToolInput
-) -> dict[str, Any]:
-    request = CustomerHealthInput.model_validate(payload)
-    customers = {
-        "CUS-2041": {
-            "name": "Avery Stone",
-            "health_score": 46,
-            "segment": "enterprise",
-            "lifetime_value_usd": 38_440,
-            "open_support_cases": 2,
-            "recommended_action": "Assign account owner and resolve payment method today",
-        },
-        "CUS-1188": {
-            "name": "Morgan Labs",
-            "health_score": 62,
-            "segment": "growth",
-            "lifetime_value_usd": 21_880,
-            "open_support_cases": 1,
-            "recommended_action": "Expedite shipment and issue proactive delivery update",
-        },
-    }
-    return {
-        "tenant_id": tenant_id,
-        "customer_id": request.customer_id,
-        **customers.get(
-            request.customer_id,
-            {
-                "name": "Unknown customer",
-                "health_score": 75,
-                "segment": "standard",
-                "lifetime_value_usd": 0,
-                "open_support_cases": 0,
-                "recommended_action": "No immediate action",
-            },
+        "channel": record.channel,
+        "currency": record.currency,
+        "gross_revenue": float(record.gross_revenue),
+        "net_revenue": float(record.net_revenue),
+        "orders": record.orders,
+        "refund_rate": float(record.refund_rate),
+        "change_vs_previous_period_pct": float(
+            record.change_vs_previous_period_pct
         ),
     }
 
 
-async def search_knowledge(tenant_id: str, payload: StrictToolInput) -> dict[str, Any]:
+async def search_orders(
+    session: AsyncSession, tenant_id: str, payload: StrictToolInput
+) -> dict[str, Any]:
+    request = SearchOrdersInput.model_validate(payload)
+    query = (
+        select(CommerceOrder)
+        .where(
+            CommerceOrder.tenant_id == tenant_id,
+            CommerceOrder.value_usd >= request.minimum_value_usd,
+        )
+        .order_by(CommerceOrder.value_usd.desc())
+        .limit(request.limit)
+    )
+    if request.status != "all":
+        query = query.where(CommerceOrder.status == request.status)
+    records = list((await session.scalars(query)).all())
+    return {
+        "source": "postgresql.commerce_orders",
+        "tenant_id": tenant_id,
+        "count": len(records),
+        "orders": [
+            {
+                "order_id": record.order_id,
+                "customer_id": record.customer_id,
+                "customer": record.customer,
+                "status": record.status,
+                "value_usd": float(record.value_usd),
+                "risk": record.risk,
+            }
+            for record in records
+        ],
+        "filters": request.model_dump(mode="json"),
+    }
+
+
+async def get_customer_health(
+    session: AsyncSession, tenant_id: str, payload: StrictToolInput
+) -> dict[str, Any]:
+    request = CustomerHealthInput.model_validate(payload)
+    record = await session.scalar(
+        select(CustomerHealthRecord).where(
+            CustomerHealthRecord.tenant_id == tenant_id,
+            CustomerHealthRecord.customer_id == request.customer_id,
+        )
+    )
+    if record is None:
+        raise ToolError(
+            "data_not_found",
+            f"No customer health record found for {request.customer_id}.",
+        )
+    return {
+        "source": "postgresql.customer_health",
+        "tenant_id": tenant_id,
+        "customer_id": record.customer_id,
+        "name": record.name,
+        "health_score": record.health_score,
+        "segment": record.segment,
+        "lifetime_value_usd": float(record.lifetime_value_usd),
+        "open_support_cases": record.open_support_cases,
+        "recommended_action": record.recommended_action,
+    }
+
+
+async def search_knowledge(
+    session: AsyncSession, tenant_id: str, payload: StrictToolInput
+) -> dict[str, Any]:
     request = KnowledgeSearchInput.model_validate(payload)
-    matches = [
-        {
-            "title": "At-risk order playbook",
-            "section": "Revenue operations",
-            "excerpt": "Prioritize failed payments above $2,500 and contact the account owner.",
-            "score": 0.93,
-        },
-        {
-            "title": "Fulfilment incident policy",
-            "section": "Customer experience",
-            "excerpt": "Send a proactive update when the fulfilment SLA exceeds four hours.",
-            "score": 0.86,
-        },
-    ][: request.limit]
-    return {"tenant_id": tenant_id, "query": request.query, "matches": matches}
+    pattern = f"%{request.query}%"
+    query = (
+        select(KnowledgeRecord)
+        .where(
+            KnowledgeRecord.tenant_id == tenant_id,
+            or_(
+                KnowledgeRecord.title.ilike(pattern),
+                KnowledgeRecord.excerpt.ilike(pattern),
+            ),
+        )
+        .order_by(KnowledgeRecord.score.desc())
+        .limit(request.limit)
+    )
+    records = list((await session.scalars(query)).all())
+    if not records:
+        records = list(
+            (
+                await session.scalars(
+                    select(KnowledgeRecord)
+                    .where(KnowledgeRecord.tenant_id == tenant_id)
+                    .order_by(KnowledgeRecord.score.desc())
+                    .limit(request.limit)
+                )
+            ).all()
+        )
+    return {
+        "source": "postgresql.knowledge_records",
+        "tenant_id": tenant_id,
+        "query": request.query,
+        "matches": [
+            {
+                "title": record.title,
+                "section": record.section,
+                "excerpt": record.excerpt,
+                "score": float(record.score),
+            }
+            for record in records
+        ],
+    }
 
 
 async def get_inventory_alerts(
-    tenant_id: str, payload: StrictToolInput
+    session: AsyncSession, tenant_id: str, payload: StrictToolInput
 ) -> dict[str, Any]:
     request = InventoryAlertsInput.model_validate(payload)
+    query = (
+        select(InventoryRecord)
+        .where(
+            InventoryRecord.tenant_id == tenant_id,
+            InventoryRecord.days_of_cover < request.days_of_cover_below,
+        )
+        .order_by(InventoryRecord.days_of_cover)
+    )
+    if request.warehouse != "all":
+        query = query.where(InventoryRecord.warehouse == request.warehouse)
+    records = list((await session.scalars(query)).all())
     return {
+        "source": "postgresql.inventory_records",
         "tenant_id": tenant_id,
         "warehouse": request.warehouse,
         "threshold_days": request.days_of_cover_below,
         "items": [
-            {"sku": "NS-AX14", "name": "Arc Desk Lamp", "days_of_cover": 3.2},
-            {"sku": "NS-BT07", "name": "Balance Tray", "days_of_cover": 4.7},
+            {
+                "warehouse": record.warehouse,
+                "sku": record.sku,
+                "name": record.name,
+                "days_of_cover": float(record.days_of_cover),
+            }
+            for record in records
         ],
     }
 
@@ -213,42 +270,52 @@ class ToolRegistry:
         definitions = [
             ToolDefinition(
                 "get_revenue_summary",
-                "Return revenue, order volume and refund metrics for a date range and channel.",
+                "Query PostgreSQL for revenue, order volume and refund metrics by period.",
                 RevenueSummaryInput,
                 get_revenue_summary,
             ),
             ToolDefinition(
                 "search_orders",
-                "Find orders by status and minimum value, including operational risk signals.",
+                "Query PostgreSQL for orders by status and minimum value, including risk signals.",
                 SearchOrdersInput,
                 search_orders,
             ),
             ToolDefinition(
                 "get_customer_health",
-                "Return customer health, lifetime value, support load and the next best action.",
+                "Query PostgreSQL for customer health, lifetime value, "
+                "support load and next action.",
                 CustomerHealthInput,
                 get_customer_health,
             ),
             ToolDefinition(
                 "search_knowledge",
-                "Search internal operating procedures and return grounded policy excerpts.",
+                "Search tenant operating procedures stored in PostgreSQL.",
                 KnowledgeSearchInput,
                 search_knowledge,
             ),
             ToolDefinition(
                 "get_inventory_alerts",
-                "List inventory items whose projected days of cover fall below a threshold.",
+                "Query PostgreSQL for inventory below a days-of-cover threshold.",
                 InventoryAlertsInput,
                 get_inventory_alerts,
             ),
         ]
-        self._definitions = {definition.name: definition for definition in definitions}
+        self._definitions = {
+            definition.name: definition for definition in definitions
+        }
 
     def schemas(self) -> list[dict[str, Any]]:
-        return [definition.openai_schema() for definition in self._definitions.values()]
+        return [
+            definition.openai_schema()
+            for definition in self._definitions.values()
+        ]
 
     async def execute(
-        self, name: str, arguments: dict[str, Any], tenant_id: str
+        self,
+        name: str,
+        arguments: dict[str, Any],
+        tenant_id: str,
+        session: AsyncSession,
     ) -> ToolExecution:
         definition = self._definitions.get(name)
         if definition is None:
@@ -265,7 +332,8 @@ class ToolRegistry:
             cause: Exception
             try:
                 output = await asyncio.wait_for(
-                    definition.handler(tenant_id, payload), timeout=self.timeout_seconds
+                    definition.handler(session, tenant_id, payload),
+                    timeout=self.timeout_seconds,
                 )
                 return ToolExecution(
                     output=output,
@@ -274,13 +342,17 @@ class ToolRegistry:
                 )
             except TimeoutError as exc:
                 cause = exc
-                error = ToolError("tool_timeout", f"{name} timed out", retryable=True)
+                error = ToolError(
+                    "tool_timeout", f"{name} timed out", retryable=True
+                )
             except ToolError as exc:
                 cause = exc
                 error = exc
-            except Exception as exc:  # External integrations are normalized at this boundary.
+            except Exception as exc:
                 cause = exc
-                error = ToolError("tool_execution_error", str(exc), retryable=True)
+                error = ToolError(
+                    "tool_execution_error", str(exc), retryable=True
+                )
 
             if not error.retryable or attempts > self.retry_attempts:
                 raise error from cause

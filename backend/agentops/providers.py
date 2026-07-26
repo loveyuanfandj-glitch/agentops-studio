@@ -101,6 +101,161 @@ class OpenAIProvider:
         )
 
 
+class DeepSeekProvider:
+    def __init__(self, settings: Settings) -> None:
+        if not settings.deepseek_api_key:
+            raise ValueError("DEEPSEEK_API_KEY is required when AGENT_PROVIDER=deepseek")
+        self.client = AsyncOpenAI(
+            api_key=settings.deepseek_api_key,
+            base_url=settings.deepseek_base_url,
+            max_retries=2,
+        )
+        self.model = settings.deepseek_model
+
+    async def respond(
+        self,
+        input_items: list[dict[str, Any]],
+        tools: list[dict[str, Any]],
+        instructions: str,
+    ) -> ProviderTurn:
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=self._messages(input_items, instructions),
+                tools=self._tools(tools),
+                stream=False,
+                extra_body={"thinking": {"type": "disabled"}},
+            )
+        except Exception as exc:
+            raise ProviderError("provider_request_failed", str(exc)) from exc
+
+        message = response.choices[0].message
+        output_items: list[dict[str, Any]] = []
+        tool_calls: list[ToolCall] = []
+        for call in message.tool_calls or []:
+            try:
+                arguments = json.loads(call.function.arguments)
+            except json.JSONDecodeError as exc:
+                raise ProviderError("invalid_tool_arguments", str(exc)) from exc
+            output_items.append(
+                {
+                    "type": "function_call",
+                    "call_id": call.id,
+                    "name": call.function.name,
+                    "arguments": call.function.arguments,
+                }
+            )
+            tool_calls.append(
+                ToolCall(
+                    call_id=call.id,
+                    name=call.function.name,
+                    arguments=arguments,
+                )
+            )
+
+        final_text = (message.content or None) if not tool_calls else None
+        if final_text:
+            output_items.append(
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "output_text", "text": final_text}],
+                }
+            )
+
+        usage = response.usage
+        return ProviderTurn(
+            output_items=output_items,
+            tool_calls=tool_calls,
+            final_text=final_text,
+            usage=TokenUsage(
+                input_tokens=usage.prompt_tokens if usage else 0,
+                output_tokens=usage.completion_tokens if usage else 0,
+                cached_tokens=(
+                    getattr(usage, "prompt_cache_hit_tokens", 0) or 0
+                    if usage
+                    else 0
+                ),
+            ),
+        )
+
+    @staticmethod
+    def _messages(
+        input_items: list[dict[str, Any]], instructions: str
+    ) -> list[dict[str, Any]]:
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": instructions}
+        ]
+        index = 0
+        while index < len(input_items):
+            item = input_items[index]
+            if item.get("type") == "function_call":
+                calls: list[dict[str, Any]] = []
+                while (
+                    index < len(input_items)
+                    and input_items[index].get("type") == "function_call"
+                ):
+                    call = input_items[index]
+                    calls.append(
+                        {
+                            "id": call["call_id"],
+                            "type": "function",
+                            "function": {
+                                "name": call["name"],
+                                "arguments": call["arguments"],
+                            },
+                        }
+                    )
+                    index += 1
+                messages.append(
+                    {"role": "assistant", "content": "", "tool_calls": calls}
+                )
+                continue
+            if item.get("type") == "function_call_output":
+                messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": item["call_id"],
+                        "content": item["output"],
+                    }
+                )
+            elif item.get("role") in {"user", "assistant"}:
+                messages.append(
+                    {
+                        "role": item["role"],
+                        "content": DeepSeekProvider._text_content(item.get("content")),
+                    }
+                )
+            index += 1
+        return messages
+
+    @staticmethod
+    def _text_content(content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            return "\n".join(
+                part.get("text", "")
+                for part in content
+                if isinstance(part, dict) and part.get("text")
+            )
+        return ""
+
+    @staticmethod
+    def _tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": tool["name"],
+                    "description": tool["description"],
+                    "parameters": tool["parameters"],
+                },
+            }
+            for tool in tools
+        ]
+
+
 class MockProvider:
     """Deterministic provider that demonstrates the complete agent loop without an API key."""
 
@@ -181,4 +336,6 @@ class MockProvider:
 def build_provider(settings: Settings) -> AgentProvider:
     if settings.agent_provider == "openai":
         return OpenAIProvider(settings)
+    if settings.agent_provider == "deepseek":
+        return DeepSeekProvider(settings)
     return MockProvider()

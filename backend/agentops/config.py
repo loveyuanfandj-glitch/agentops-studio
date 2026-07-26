@@ -22,10 +22,13 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./agentops.db"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
 
-    agent_provider: Literal["mock", "openai"] = "mock"
+    agent_provider: Literal["mock", "openai", "deepseek"] = "mock"
     openai_api_key: str | None = None
     openai_model: str = "gpt-5.6-terra"
     openai_store_responses: bool = False
+    deepseek_api_key: str | None = None
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-v4-flash"
 
     max_agent_steps: int = Field(default=8, ge=1, le=32)
     max_repeated_tool_calls: int = Field(default=2, ge=1, le=8)
@@ -37,6 +40,14 @@ class Settings(BaseSettings):
     otel_service_name: str = "agentops-studio-api"
     otel_exporter_otlp_endpoint: str | None = None
     log_level: str = "INFO"
+
+    @property
+    def agent_model(self) -> str:
+        if self.agent_provider == "deepseek":
+            return self.deepseek_model
+        if self.agent_provider == "mock":
+            return "deterministic-demo"
+        return self.openai_model
 
 
 @lru_cache

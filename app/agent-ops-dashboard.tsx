@@ -62,6 +62,7 @@ type TraceStep = {
 type ApiRun = {
   id: string;
   status: string;
+  model: string;
   answer: string;
   input_tokens: number;
   output_tokens: number;
@@ -401,7 +402,7 @@ function Playground({ apiUrl }: { apiUrl?: string }) {
   const [trace, setTrace] = useState<TraceStep[]>(baseTrace);
   const [showAnswer, setShowAnswer] = useState(true);
   const [answer, setAnswer] = useState("Revenue declined 12.4%, primarily from Amazon UK refunds and delayed Shopify fulfillment. Six repeat buyers need proactive outreach, but overall customer health remains stable.");
-  const [runMeta, setRunMeta] = useState({ id: "run_9f21", latency: "2.8s", input: "3,842", output: "618", cached: "1,204", cost: "$0.0412" });
+  const [runMeta, setRunMeta] = useState({ id: "run_9f21", model: "deterministic-demo", latency: "2.8s", input: "3,842", output: "618", cached: "1,204", cost: "$0.0412" });
 
   const animateDemo = () => {
     baseTrace.forEach((_, index) => {
@@ -456,6 +457,7 @@ function Playground({ apiUrl }: { apiUrl?: string }) {
       setAnswer(run.answer);
       setRunMeta({
         id: run.id,
+        model: run.model,
         latency: `${(run.latency_ms / 1000).toFixed(2)}s`,
         input: run.input_tokens.toLocaleString(),
         output: run.output_tokens.toLocaleString(),
@@ -476,7 +478,7 @@ function Playground({ apiUrl }: { apiUrl?: string }) {
       <section className="playground-main">
         <div className="playground-head">
           <div><p className="eyebrow"><Radio size={14} /> LIVE ORCHESTRATION</p><h1>Revenue investigation</h1><p>Conversation <code>conv_7d32ac</code> · Northstar Retail</p></div>
-          <div className="model-select"><span>MODEL</span><strong>deterministic-demo</strong><ChevronDown size={14} /></div>
+          <div className="model-select"><span>MODEL</span><strong>{runMeta.model}</strong><ChevronDown size={14} /></div>
         </div>
         <div className="chat-canvas">
           <div className="chat-date">TODAY, 09:42</div>

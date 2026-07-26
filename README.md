@@ -4,7 +4,7 @@
 
 ![AgentOps Studio synthetic operations dashboard](public/portfolio-overview.jpg)
 
-All records and metrics in these screenshots are synthetic portfolio data. The Playground uses the deterministic provider by default and can be switched to the OpenAI adapter through configuration.
+All records and metrics in these screenshots are synthetic portfolio data. The Playground uses the deterministic provider by default and can be switched to the OpenAI Responses API or DeepSeek Chat Completions adapter through configuration.
 
 ![AgentOps Studio deterministic multi-tool trace](public/portfolio-playground.jpg)
 
@@ -14,7 +14,7 @@ Tool calling is easy to demo and surprisingly easy to implement incorrectly. A r
 
 AgentOps Studio demonstrates that complete path:
 
-- sequential OpenAI Responses API tool calls with `function_call_output` correlation;
+- sequential OpenAI Responses API or DeepSeek Chat Completions tool calls with correlated results;
 - strict JSON Schema contracts and typed tool failures;
 - conversation, message, run, and per-step persistence;
 - PostgreSQL tenant boundaries and usage aggregation;
@@ -38,7 +38,7 @@ AgentOps Studio demonstrates that complete path:
 flowchart LR
   UI[Next.js operations console] -->|X-Tenant-ID| API[FastAPI API]
   API --> ORCH[Agent orchestrator]
-  ORCH --> LLM[OpenAI Responses API\nor deterministic provider]
+  ORCH --> LLM[OpenAI Responses API\nDeepSeek Chat Completions\nor deterministic provider]
   LLM -->|function_call| ORCH
   ORCH -->|validated arguments| TOOLS[Typed tool registry]
   TOOLS -->|structured output| ORCH
@@ -47,7 +47,20 @@ flowchart LR
   ORCH --> OTEL[OpenTelemetry / OTLP]
 ```
 
-The repository defaults to a deterministic provider, so the full seven-step run works without credentials. Set `AGENT_PROVIDER=openai` and provide `OPENAI_API_KEY` to use the production provider adapter.
+The repository defaults to a deterministic provider, so the full seven-step run works without credentials. Use one of the live provider configurations below:
+
+```bash
+# OpenAI Responses API
+AGENT_PROVIDER=openai
+OPENAI_API_KEY=...
+
+# DeepSeek OpenAI-compatible Chat Completions API
+AGENT_PROVIDER=deepseek
+DEEPSEEK_API_KEY=...
+DEEPSEEK_MODEL=deepseek-v4-flash
+```
+
+DeepSeek thinking mode is disabled for tool runs so every assistant tool call can be replayed through a simple, auditable Chat Completions transcript.
 
 ## Quick start
 
@@ -78,6 +91,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000 npm run dev
 ```
 
 SQLite is the local fallback when `DATABASE_URL` is omitted. Docker Compose uses PostgreSQL and runs the Alembic migration before booting the API.
+The five example tools query tenant-scoped operational records in PostgreSQL (revenue summaries, orders, customer health, knowledge, and inventory); their responses are not hard-coded fixtures.
 
 ## Try the agent API
 
@@ -139,7 +153,7 @@ The backend suite covers the real multi-step loop, repeated-call guard, strict s
 ## Design decisions
 
 - **Manual loop, thin provider adapter.** The orchestration is intentionally visible rather than hidden behind a framework, making state transitions and failure behavior easy to audit.
-- **Provider-neutral core.** `MockProvider` and `OpenAIProvider` share a small interface; tests never need a network call.
+- **Provider-neutral core.** `MockProvider`, `OpenAIProvider`, and `DeepSeekProvider` share a small interface; contract tests never need a network call.
 - **Tool errors return to the model.** Validated failures become structured tool outputs, allowing the model to recover when possible while preserving the trace.
 - **No secret required for the portfolio demo.** The UI remains interactive when the API is absent, while the same screen uses the live backend when `NEXT_PUBLIC_API_URL` is configured.
 - **Pricing is explicit configuration.** Defaults are versioned in code and should be reviewed when providers change pricing.
@@ -151,6 +165,8 @@ See [architecture details](docs/architecture.md), the [tool-loop walkthrough](do
 - [OpenAI function calling guide](https://developers.openai.com/api/docs/guides/function-calling)
 - [OpenAI conversation state guide](https://developers.openai.com/api/docs/guides/conversation-state)
 - [OpenAI model catalog](https://developers.openai.com/api/docs/models)
+- [DeepSeek tool-calling guide](https://api-docs.deepseek.com/guides/tool_calls)
+- [DeepSeek models and pricing](https://api-docs.deepseek.com/quick_start/pricing)
 
 ## License
 

@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 AGENT_INSTRUCTIONS = """You are the operations copilot for a multi-tenant commerce platform.
 Use tools whenever business data is needed. Gather all required evidence before answering.
 Never invent metrics. Clearly state recommended actions and cite the relevant entity IDs.
+Only state aggregates returned by a tool or transparently calculated from listed entities.
+Do not treat the difference between gross and net revenue as at-risk revenue.
+If the available tool data cannot support a claim, say that the value is unavailable.
 Keep the final response concise, decision-oriented, and grounded in tool results."""
 
 
@@ -58,7 +61,7 @@ class AgentOrchestrator:
         run = AgentRun(
             tenant_id=tenant_id,
             conversation_id=conversation.id,
-            model=self.settings.openai_model,
+            model=self.settings.agent_model,
             prompt=prompt,
             cost_usd=Decimal(0),
             steps=[],
@@ -122,16 +125,17 @@ class AgentOrchestrator:
                 run.output_tokens += turn.usage.output_tokens
                 run.cached_tokens += turn.usage.cached_tokens
                 run.cost_usd += estimate_cost(
-                    self.settings.openai_model,
+                    self.settings.agent_model,
                     turn.usage.input_tokens,
                     turn.usage.output_tokens,
+                    turn.usage.cached_tokens,
                 )
                 sequence += 1
                 run.steps.append(
                     RunStep(
                         sequence=sequence,
                         kind="model",
-                        name=self.settings.openai_model,
+                        name=self.settings.agent_model,
                         status="completed",
                         duration_ms=model_duration,
                         output={
@@ -190,7 +194,9 @@ class AgentOrchestrator:
         with tracer.start_as_current_span(f"agent.tool.{name}") as span:
             span.set_attribute("tool.name", name)
             try:
-                execution = await self.tools.execute(name, arguments, tenant_id)
+                execution = await self.tools.execute(
+                    name, arguments, tenant_id, self.session
+                )
                 output = {"ok": True, "data": execution.output}
                 run.steps.append(
                     RunStep(
