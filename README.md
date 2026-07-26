@@ -2,7 +2,11 @@
 
 **A production-minded control plane for multi-step, tool-using AI agents.** AgentOps Studio shows how to build the part that sits between an LLM demo and a dependable SaaS feature: orchestration, strict tool contracts, tenant isolation, cost accounting, loop guards, traces, and an operator-friendly UI.
 
-![AgentOps Studio dashboard](public/og.png)
+![AgentOps Studio synthetic operations dashboard](public/portfolio-overview.jpg)
+
+All records and metrics in these screenshots are synthetic portfolio data. The Playground uses the deterministic provider by default and can be switched to the OpenAI adapter through configuration.
+
+![AgentOps Studio deterministic multi-tool trace](public/portfolio-playground.jpg)
 
 ## Why this project exists
 

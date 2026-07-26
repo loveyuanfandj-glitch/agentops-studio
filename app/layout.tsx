@@ -6,26 +6,26 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "AgentOps Studio — Production control for tool-using AI agents",
+  title: "AgentOps Studio — Auditable control for tool-using AI agents",
   description:
-    "Multi-step orchestration, traces, tenant usage, cost, and guardrails for production AI agents.",
+    "Multi-step orchestration, traces, tenant usage, cost, and guardrails for production-minded AI agents.",
   openGraph: {
     title: "AgentOps Studio",
-    description: "Production control for tool-using AI agents.",
+    description: "Auditable orchestration for tool-using AI agents.",
     images: [
       {
-        url: "/og.png",
-        width: 1729,
-        height: 910,
-        alt: "AgentOps Studio operations dashboard",
+        url: "/portfolio-overview.jpg",
+        width: 1512,
+        height: 1248,
+        alt: "AgentOps Studio synthetic operations dashboard",
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
     title: "AgentOps Studio",
-    description: "Production control for tool-using AI agents.",
-    images: ["/og.png"],
+    description: "Auditable orchestration for tool-using AI agents.",
+    images: ["/portfolio-overview.jpg"],
   },
 };
 

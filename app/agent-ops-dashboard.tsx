@@ -98,11 +98,11 @@ const toolMix = [
 ];
 
 const runs = [
-  { id: "run_9f21", tenant: "Northstar Retail", prompt: "Explain yesterday's revenue drop", status: "Completed", steps: 4, model: "gpt-5.6-terra", cost: "$0.0412", latency: "2.8s", time: "2 min ago" },
-  { id: "run_9f20", tenant: "Luma Commerce", prompt: "Find at-risk VIP customers", status: "Completed", steps: 3, model: "gpt-5.6-terra", cost: "$0.0274", latency: "2.1s", time: "8 min ago" },
-  { id: "run_9f1f", tenant: "Atlas Supply", prompt: "Summarize delayed fulfillment", status: "Completed", steps: 5, model: "gpt-5.6-luna", cost: "$0.0189", latency: "3.4s", time: "16 min ago" },
-  { id: "run_9f1e", tenant: "Northstar Retail", prompt: "Compare refund rate by channel", status: "Guarded", steps: 8, model: "gpt-5.6-terra", cost: "$0.0621", latency: "8.0s", time: "31 min ago" },
-  { id: "run_9f1d", tenant: "Orchid Labs", prompt: "Create a weekly support brief", status: "Failed", steps: 2, model: "gpt-5.6-luna", cost: "$0.0068", latency: "1.4s", time: "42 min ago" },
+  { id: "run_9f21", tenant: "Northstar Retail", prompt: "Explain yesterday's revenue drop", status: "Completed", steps: 4, model: "deterministic-demo", cost: "$0.0412", latency: "2.8s", time: "2 min ago" },
+  { id: "run_9f20", tenant: "Luma Commerce", prompt: "Find at-risk VIP customers", status: "Completed", steps: 3, model: "deterministic-demo", cost: "$0.0274", latency: "2.1s", time: "8 min ago" },
+  { id: "run_9f1f", tenant: "Atlas Supply", prompt: "Summarize delayed fulfillment", status: "Completed", steps: 5, model: "deterministic-demo", cost: "$0.0189", latency: "3.4s", time: "16 min ago" },
+  { id: "run_9f1e", tenant: "Northstar Retail", prompt: "Compare refund rate by channel", status: "Guarded", steps: 8, model: "deterministic-demo", cost: "$0.0621", latency: "8.0s", time: "31 min ago" },
+  { id: "run_9f1d", tenant: "Orchid Labs", prompt: "Create a weekly support brief", status: "Failed", steps: 2, model: "deterministic-demo", cost: "$0.0068", latency: "1.4s", time: "42 min ago" },
 ];
 
 const tools = [
@@ -223,7 +223,7 @@ function Sidebar({ view, onChange }: { view: View; onChange: (view: View) => voi
       <Brand />
       <div className="workspace-switcher">
         <div className="workspace-avatar">N</div>
-        <div><span>Northstar Labs</span><small>Production</small></div>
+        <div><span>Northstar Labs</span><small>Synthetic demo</small></div>
         <ChevronDown size={15} />
       </div>
       <nav className="nav" aria-label="Main navigation">
@@ -343,7 +343,7 @@ function Overview({ onView }: { onView: (view: View) => void }) {
       <section className="analytics-grid">
         <article className="panel usage-panel">
           <div className="panel-head"><div><p className="panel-kicker">USAGE & COST</p><h2>Seven-day model spend</h2></div><button className="range-button">Last 7 days <ChevronDown size={14} /></button></div>
-          <div className="chart-summary"><strong>$18.42</strong><span><TrendingUp size={13} /> 8.2%</span><small>Across 1,090 production runs</small></div>
+          <div className="chart-summary"><strong>$18.42</strong><span><TrendingUp size={13} /> 8.2%</span><small>Across 1,090 synthetic demo runs</small></div>
           <div className="main-chart">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={usageData} margin={{ top: 8, right: 4, left: -24, bottom: 0 }}>
@@ -476,7 +476,7 @@ function Playground({ apiUrl }: { apiUrl?: string }) {
       <section className="playground-main">
         <div className="playground-head">
           <div><p className="eyebrow"><Radio size={14} /> LIVE ORCHESTRATION</p><h1>Revenue investigation</h1><p>Conversation <code>conv_7d32ac</code> · Northstar Retail</p></div>
-          <div className="model-select"><span>MODEL</span><strong>gpt-5.6-terra</strong><ChevronDown size={14} /></div>
+          <div className="model-select"><span>MODEL</span><strong>deterministic-demo</strong><ChevronDown size={14} /></div>
         </div>
         <div className="chat-canvas">
           <div className="chat-date">TODAY, 09:42</div>
