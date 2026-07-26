@@ -1,0 +1,12 @@
+.git
+.github
+.venv
+.wrangler
+.vinext
+.ruff_cache
+dist
+node_modules
+agentops.db
+.coverage
+**/__pycache__
+.env
